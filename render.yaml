@@ -2,6 +2,7 @@ services:
   - type: web
     name: telegram-watch-bot
     env: python
+    runtime: python-3.10  # Force Python 3.10 (most stable)
     plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: python main.py
