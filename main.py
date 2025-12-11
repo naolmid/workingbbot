@@ -1,10 +1,10 @@
 import os
 import logging
 from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 
 # ========== CONFIGURATION ==========
-BOT_TOKEN = os.environ.get('BOT_TOKEN') or "YOUR_BOT_TOKEN_HERE"
+BOT_TOKEN = os.environ.get('BOT_TOKEN', 'YOUR_BOT_TOKEN_HERE')
 
 # Enable logging
 logging.basicConfig(
@@ -17,122 +17,97 @@ logger = logging.getLogger(__name__)
 WATCHED_USERS = set()
 
 # ========== BOT COMMANDS ==========
-async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
+def start(update: Update, context: CallbackContext):
+    update.message.reply_text(
         "👁️ Watch Bot Active!\n\n"
         "Commands:\n"
         "/watch [user_id] - Add user to watch list\n"
-        "/unwatch [user_id] - Remove user from watch list\n"
+        "/unwatch [user_id] - Remove user\n"
         "/list - Show watched users\n"
-        "/clear - Clear all watched users"
+        "/clear - Clear all"
     )
 
-async def watch_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def watch(update: Update, context: CallbackContext):
     if update.effective_chat.type not in ["group", "supergroup"]:
-        await update.message.reply_text("❌ This command only works in groups!")
-        return
-    
-    try:
-        user = await update.effective_chat.get_member(update.effective_user.id)
-        if user.status not in ["administrator", "creator"]:
-            await update.message.reply_text("❌ Only admins can use this command!")
-            return
-    except:
-        await update.message.reply_text("❌ Could not verify admin status!")
+        update.message.reply_text("❌ Group only!")
         return
     
     if not context.args:
-        await update.message.reply_text("❌ Usage: /watch [user_id]\nExample: /watch 123456789")
+        update.message.reply_text("❌ Use: /watch 123456789")
         return
     
     try:
         user_id = int(context.args[0])
         WATCHED_USERS.add(user_id)
-        await update.message.reply_text(f"✅ Added user {user_id} to watch list.")
-        logger.info(f"Added user {user_id} to watch list")
-    except ValueError:
-        await update.message.reply_text("❌ Invalid user ID! Must be a number.")
+        update.message.reply_text(f"✅ Added {user_id}")
+    except:
+        update.message.reply_text("❌ Invalid ID!")
 
-async def unwatch_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_chat.type not in ["group", "supergroup"]:
-        await update.message.reply_text("❌ This command only works in groups!")
-        return
-    
+def unwatch(update: Update, context: CallbackContext):
     if not context.args:
-        await update.message.reply_text("❌ Usage: /unwatch [user_id]")
+        update.message.reply_text("❌ Use: /unwatch 123456789")
         return
     
     try:
         user_id = int(context.args[0])
         if user_id in WATCHED_USERS:
             WATCHED_USERS.remove(user_id)
-            await update.message.reply_text(f"✅ Removed user {user_id} from watch list.")
+            update.message.reply_text(f"✅ Removed {user_id}")
         else:
-            await update.message.reply_text(f"❌ User {user_id} is not in the watch list.")
-    except ValueError:
-        await update.message.reply_text("❌ Invalid user ID!")
+            update.message.reply_text(f"❌ Not in list")
+    except:
+        update.message.reply_text("❌ Invalid ID!")
 
-async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def list_users(update: Update, context: CallbackContext):
     if not WATCHED_USERS:
-        await update.message.reply_text("📭 Watch list is empty.")
+        update.message.reply_text("📭 Empty")
     else:
-        users_list = "\n".join([f"• {user_id}" for user_id in WATCHED_USERS])
-        await update.message.reply_text(f"👁️ Watched Users:\n{users_list}")
+        users = "\n".join([f"• {uid}" for uid in WATCHED_USERS])
+        update.message.reply_text(f"👁️ Watching:\n{users}")
 
-async def clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def clear(update: Update, context: CallbackContext):
     WATCHED_USERS.clear()
-    await update.message.reply_text("✅ Cleared all watched users.")
-    logger.info("Watch list cleared")
+    update.message.reply_text("✅ Cleared all")
 
 # ========== MESSAGE HANDLER ==========
-async def delete_watched_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message:
-        return
-    
+def delete_message(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
     
     if user_id in WATCHED_USERS:
         try:
-            await update.message.delete()
-            logger.info(f"Deleted message from watched user {user_id}")
-        except Exception as e:
-            logger.error(f"Failed to delete message: {e}")
+            update.message.delete()
+            logger.info(f"Deleted message from {user_id}")
+        except:
+            logger.error("Failed to delete")
 
-# ========== ERROR HANDLER ==========
-async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
-    logger.error(f"Update {update} caused error {context.error}")
-
-# ========== MAIN FUNCTION ==========
+# ========== MAIN ==========
 def main():
-    """Start the bot"""
-    print("🤖 Bot is starting...")
-    print(f"Token present: {'YES' if BOT_TOKEN and BOT_TOKEN != 'YOUR_BOT_TOKEN_HERE' else 'NO'}")
+    print("🤖 Starting bot...")
     
     if BOT_TOKEN == "YOUR_BOT_TOKEN_HERE":
-        print("❌ ERROR: Please set BOT_TOKEN as environment variable on Render!")
-        print("Go to your Render dashboard → Environment → Add BOT_TOKEN")
+        print("❌ ERROR: Set BOT_TOKEN on Render!")
         return
     
-    application = Application.builder().token(BOT_TOKEN).build()
+    # Use Updater class (compatible with 20.7)
+    updater = Updater(BOT_TOKEN, use_context=True)
+    dispatcher = updater.dispatcher
     
-    # Add command handlers
-    application.add_handler(CommandHandler("start", start_command))
-    application.add_handler(CommandHandler("watch", watch_command))
-    application.add_handler(CommandHandler("unwatch", unwatch_command))
-    application.add_handler(CommandHandler("list", list_command))
-    application.add_handler(CommandHandler("clear", clear_command))
+    # Add handlers
+    dispatcher.add_handler(CommandHandler("start", start))
+    dispatcher.add_handler(CommandHandler("watch", watch))
+    dispatcher.add_handler(CommandHandler("unwatch", unwatch))
+    dispatcher.add_handler(CommandHandler("list", list_users))
+    dispatcher.add_handler(CommandHandler("clear", clear))
     
-    # Add message handler
-    application.add_handler(MessageHandler(
-        filters.ALL & ~filters.COMMAND,
-        delete_watched_messages
+    # Add message handler (all messages except commands)
+    dispatcher.add_handler(MessageHandler(
+        Filters.text & ~Filters.command, 
+        delete_message
     ))
     
-    # Add error handler
-    application.add_error_handler(error_handler)
-    
-    print("✅ Bot configured. Starting polling...")
-    application.run_polling()
+    print("✅ Bot configured. Starting...")
+    updater.start_polling()
+    updater.idle()
 
 if __name__ == "__main__":
     main()
